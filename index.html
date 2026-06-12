@@ -579,12 +579,17 @@
                 <div class="modal-body" style="text-align: left;">
                     <div class="setting-item" style="margin-bottom: 20px;">
                         <label>연결 방식 선택:</label>
-                        <div style="display: flex; gap: 15px;">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; gap: 15px;">
+                                <label style="font-weight: normal; font-size: 15px; cursor: pointer;">
+                                    <input type="radio" name="conn-type" value="serial" checked onchange="toggleConnType()"> 유선 (COM)
+                                </label>
+                                <label style="font-weight: normal; font-size: 15px; cursor: pointer;">
+                                    <input type="radio" name="conn-type" value="bluetooth" onchange="toggleConnType()"> 무선 (블루투스)
+                                </label>
+                            </div>
                             <label style="font-weight: normal; font-size: 15px; cursor: pointer;">
-                                <input type="radio" name="conn-type" value="serial" checked onchange="toggleConnType()"> 유선 (COM)
-                            </label>
-                            <label style="font-weight: normal; font-size: 15px; cursor: pointer;">
-                                <input type="radio" name="conn-type" value="bluetooth" onchange="toggleConnType()"> 무선 (블루투스)
+                                <input type="radio" name="conn-type" value="rawbt" onchange="toggleConnType()"> 안드로이드 앱 (RawBT)
                             </label>
                         </div>
                     </div>
@@ -593,7 +598,7 @@
                     <div id="conn-serial-area">
                         <div class="setting-item">
                             <label for="printer-baudrate">통신 속도 (Baud Rate):</label>
-                            <select id="printer-baudrate" class="select-box">
+                            <select id="printer-baudrate" class="select-box" onchange="saveBaudrate()">
                                 <option value="9600">9600 (기본값)</option>
                                 <option value="19200">19200</option>
                                 <option value="38400">38400</option>
@@ -607,6 +612,16 @@
                     <div id="conn-bluetooth-area" style="display: none;">
                         <p style="font-size: 13px; color: #666; margin: 0 0 10px 0;">※ 블루투스 프린터를 켜고 페어링 대기 상태로 설정해 주세요.</p>
                         <button class="btn btn-primary" style="margin: 0; font-size: 17px; padding: 12px; width: 100%;" onclick="connectBluetooth()">📱 블루투스 프린터 연결</button>
+                    </div>
+
+                    <!-- RawBT 설정 영역 -->
+                    <div id="conn-rawbt-area" style="display: none;">
+                        <p style="font-size: 13px; color: #666; margin: 0 0 8px 0; line-height: 1.5;">
+                            ※ 태블릿에 <strong>RawBT</strong> 앱을 설치하고 블루투스 프린터(<code>CPP-3100_9199</code>)를 등록해 주세요.
+                        </p>
+                        <p style="font-size: 13px; color: #d52b1e; margin: 0; font-weight: bold; line-height: 1.5;">
+                            ※ 이 모드에서는 결제 완료 시 별도의 브라우저 팝업이나 설정 없이 프린터로 즉시 전송되어 출력됩니다.
+                        </p>
                     </div>
 
                     <div class="setting-item" style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
@@ -892,15 +907,36 @@
         document.getElementById('printer-modal').style.display = 'none';
     }
 
+    // 페이지 로드 시 설정 불러오기
+    window.addEventListener('DOMContentLoaded', () => {
+        const savedConnType = localStorage.getItem('printer-conn-type');
+        if (savedConnType) {
+            const radio = document.querySelector(`input[name="conn-type"][value="${savedConnType}"]`);
+            if (radio) {
+                radio.checked = true;
+            }
+        }
+        
+        const savedBaud = localStorage.getItem('printer-baudrate');
+        if (savedBaud && document.getElementById('printer-baudrate')) {
+            document.getElementById('printer-baudrate').value = savedBaud;
+        }
+        toggleConnType();
+    });
+
     function toggleConnType() {
         const selectedType = document.querySelector('input[name="conn-type"]:checked').value;
-        if (selectedType === 'serial') {
-            document.getElementById('conn-serial-area').style.display = 'block';
-            document.getElementById('conn-bluetooth-area').style.display = 'none';
-        } else {
-            document.getElementById('conn-serial-area').style.display = 'none';
-            document.getElementById('conn-bluetooth-area').style.display = 'block';
-        }
+        localStorage.setItem('printer-conn-type', selectedType);
+
+        document.getElementById('conn-serial-area').style.display = (selectedType === 'serial') ? 'block' : 'none';
+        document.getElementById('conn-bluetooth-area').style.display = (selectedType === 'bluetooth') ? 'block' : 'none';
+        document.getElementById('conn-rawbt-area').style.display = (selectedType === 'rawbt') ? 'block' : 'none';
+        checkPrinterStatus();
+    }
+
+    function saveBaudrate() {
+        const baud = document.getElementById('printer-baudrate').value;
+        localStorage.setItem('printer-baudrate', baud);
         checkPrinterStatus();
     }
 
@@ -928,7 +964,7 @@
                     testBtn.disabled = true;
                 }
             }
-        } else {
+        } else if (selectedType === 'bluetooth') {
             // Bluetooth 체크
             if (!navigator.bluetooth) {
                 statusText.innerHTML = `⚠️ Bluetooth 지원 불가 (HTTPS 연결이 필요합니다)`;
@@ -947,6 +983,10 @@
                     testBtn.disabled = true;
                 }
             }
+        } else if (selectedType === 'rawbt') {
+            statusText.innerHTML = `🟢 안드로이드 앱 연동 준비 완료`;
+            statusText.style.color = "green";
+            testBtn.disabled = false;
         }
     }
 
@@ -1046,7 +1086,7 @@
             } finally {
                 writer.releaseLock();
             }
-        } else {
+        } else if (selectedType === 'bluetooth') {
             // 블루투스 분할 전송 (Chunking - MTU 20바이트 제한 우회)
             if (!bluetoothCharacteristic) {
                 throw new Error("블루투스 프린터 채널이 열려있지 않습니다.");
@@ -1068,7 +1108,21 @@
                 // 데이터 버퍼 유실 방지를 위한 미세한 대기 시간 지정 (15ms)
                 await new Promise(resolve => setTimeout(resolve, 15));
             }
+        } else if (selectedType === 'rawbt') {
+            // 안드로이드 RawBT 앱 연동 (Base64 형식 주소 호출)
+            const base64Str = uint8ArrayToBase64(bytes);
+            window.location.href = "rawbt:base64," + base64Str;
         }
+    }
+
+    // Uint8Array 바이트 배열을 Base64 문자열로 변환하는 함수
+    function uint8ArrayToBase64(uint8Array) {
+        let binary = '';
+        const len = uint8Array.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(uint8Array[i]);
+        }
+        return window.btoa(binary);
     }
 
     // 한글 인코더 래퍼 함수 (EUC-KR 지원 폴리필이 없으면 UTF-8로 자동 대체)
@@ -1085,7 +1139,12 @@
 
     async function testPrint() {
         const selectedType = document.querySelector('input[name="conn-type"]:checked').value;
-        const typeStr = (selectedType === 'serial') ? "유선(COM)" : "무선(블루투스)";
+        let typeStr = "유선(COM)";
+        if (selectedType === 'bluetooth') {
+            typeStr = "무선(블루투스)";
+        } else if (selectedType === 'rawbt') {
+            typeStr = "안드로이드 앱(RawBT)";
+        }
         
         try {
             const builder = new EscPosBuilder();
