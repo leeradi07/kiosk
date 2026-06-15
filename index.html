@@ -1109,9 +1109,9 @@
                 await new Promise(resolve => setTimeout(resolve, 15));
             }
         } else if (selectedType === 'rawbt') {
-            // 안드로이드 RawBT 앱 연동 (크롬 브라우저 규격의 Android Intent URL 호출)
+            // 안드로이드 RawBT 앱 연동 (대화상자 생략을 위해 PRINT_RAWBT 액션 인텐트 직접 호출)
             const base64Str = uint8ArrayToBase64(bytes);
-            window.location.href = "intent:base64," + base64Str + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+            window.location.href = "intent:#Intent;action=ru.a402d.rawbtprinter.action.PRINT_RAWBT;package=ru.a402d.rawbtprinter;S.ru.a402d.rawbtprinter.extra.DATA=" + encodeURIComponent("base64," + base64Str) + ";end;";
         }
     }
 
