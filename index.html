@@ -1109,9 +1109,38 @@
                 await new Promise(resolve => setTimeout(resolve, 15));
             }
         } else if (selectedType === 'rawbt') {
-            // 안드로이드 RawBT 앱 연동 (대화상자 생략을 위해 PRINT_RAWBT 액션 인텐트 직접 호출)
+            // 안드로이드 RawBT 내장 웹소켓 서버를 통한 백그라운드 무화면 인쇄 시도
             const base64Str = uint8ArrayToBase64(bytes);
-            window.location.href = "intent:#Intent;action=ru.a402d.rawbtprinter.action.PRINT_RAWBT;package=ru.a402d.rawbtprinter;S.ru.a402d.rawbtprinter.extra.DATA=" + encodeURIComponent("base64," + base64Str) + ";end;";
+            try {
+                const ws = new WebSocket("ws://127.0.0.1:40213/");
+                
+                // 1.5초 내에 연결되지 않으면 Intent 방식으로 폴백
+                const fallbackTimeout = setTimeout(() => {
+                    ws.close();
+                    console.log("웹소켓 연결 시간 초과, Intent 방식으로 전환합니다.");
+                    window.location.href = "intent:#Intent;action=ru.a402d.rawbtprinter.action.PRINT_RAWBT;package=ru.a402d.rawbtprinter;S.ru.a402d.rawbtprinter.extra.DATA=" + encodeURIComponent("base64," + base64Str) + ";end;";
+                }, 1500);
+
+                ws.onopen = () => {
+                    clearTimeout(fallbackTimeout);
+                    // 바이너리 데이터 직접 전송
+                    ws.send(bytes);
+                    // 데이터 전송 완료 후 안전하게 소켓을 닫아줍니다.
+                    setTimeout(() => {
+                        ws.close();
+                    }, 250);
+                };
+
+                ws.onerror = (err) => {
+                    clearTimeout(fallbackTimeout);
+                    ws.close();
+                    console.log("웹소켓 연결 오류, Intent 방식으로 전환합니다.", err);
+                    window.location.href = "intent:#Intent;action=ru.a402d.rawbtprinter.action.PRINT_RAWBT;package=ru.a402d.rawbtprinter;S.ru.a402d.rawbtprinter.extra.DATA=" + encodeURIComponent("base64," + base64Str) + ";end;";
+                };
+            } catch (e) {
+                console.log("웹소켓 초기화 오류, Intent 방식으로 전환합니다.", e);
+                window.location.href = "intent:#Intent;action=ru.a402d.rawbtprinter.action.PRINT_RAWBT;package=ru.a402d.rawbtprinter;S.ru.a402d.rawbtprinter.extra.DATA=" + encodeURIComponent("base64," + base64Str) + ";end;";
+            }
         }
     }
 
