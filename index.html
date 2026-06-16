@@ -816,7 +816,14 @@
         card.classList.add('insert');
         card.style.pointerEvents = "none"; 
         document.getElementById('payment-status').innerText = "결제 진행 중입니다... 잠시만 기다려주세요.";
-        setTimeout(completeOrder, 2000);
+        
+        const selectedType = document.querySelector('input[name="conn-type"]:checked')?.value || localStorage.getItem('printer-conn-type') || 'rawbt';
+        if (selectedType === 'rawbt') {
+            // RawBT 앱 호출의 경우 비동기 딜레이(setTimeout)로 인한 크롬 브라우저의 Intent 차단을 방지하기 위해 즉시 완료 처리
+            completeOrder();
+        } else {
+            setTimeout(completeOrder, 2000);
+        }
     }
 
     function completeOrder() {
@@ -844,53 +851,103 @@
         navigate('screen-complete');
 
         // 영수증 인쇄 시도
-        setTimeout(async function() {
-            try {
-                const builder = new EscPosBuilder();
-                builder.init()
-                       .alignCenter()
-                       .line()
-                       .line("==== 영 수 증 ====")
-                       .line()
-                       .textLarge()
-                       .line(`대기 번호: ${orderNumber}`)
-                       .textNormal()
-                       .line()
-                       .alignLeft()
-                       .line(`이용 방식: ${placeType}`)
-                       .line("--------------------------------")
-                       .line("상품명               금액")
-                       .line("--------------------------------");
-                
-                cart.forEach(item => {
-                    const priceStr = item.price.toLocaleString() + "원";
-                    builder.line(`${item.name.padEnd(20, ' ')} ${priceStr.padStart(10, ' ')}`);
-                    if (item.details) {
-                        builder.line(`  (${item.details})`);
+        const selectedType = document.querySelector('input[name="conn-type"]:checked')?.value || localStorage.getItem('printer-conn-type') || 'rawbt';
+        if (selectedType === 'rawbt') {
+            // 딜레이 없이 즉시 실행하여 사용자 제스처 유효 시간 유지
+            (async function() {
+                try {
+                    const builder = new EscPosBuilder();
+                    builder.init()
+                           .alignCenter()
+                           .line()
+                           .line("==== 영 수 증 ====")
+                           .line()
+                           .textLarge()
+                           .line(`대기 번호: ${orderNumber}`)
+                           .textNormal()
+                           .line()
+                           .alignLeft()
+                           .line(`이용 방식: ${placeType}`)
+                           .line("--------------------------------")
+                           .line("상품명               금액")
+                           .line("--------------------------------");
+                    
+                    cart.forEach(item => {
+                        const priceStr = item.price.toLocaleString() + "원";
+                        builder.line(`${item.name.padEnd(20, ' ')} ${priceStr.padStart(10, ' ')}`);
+                        if (item.details) {
+                            builder.line(`  (${item.details})`);
+                        }
+                    });
+                    
+                    builder.line("--------------------------------");
+                    if (discount > 0) {
+                        builder.line(`쿠폰 할인:          -1,000원`);
                     }
-                });
-                
-                builder.line("--------------------------------");
-                if (discount > 0) {
-                    builder.line(`쿠폰 할인:          -1,000원`);
+                    if (isMembershipRegistered) {
+                        builder.line(`적립 멤버십: ${membershipNumber}`);
+                    }
+                    builder.line(`최종 합계:          ${finalPrice.toLocaleString()}원`)
+                           .line("--------------------------------")
+                           .line()
+                           .alignCenter()
+                           .line("주문해 주셔서 감사합니다.")
+                           .feed(5)
+                           .cut();
+                    
+                    await sendToPrinter(builder.getBytes());
+                } catch (e) {
+                    console.error("프린터 자동 전송 실패:", e);
                 }
-                if (isMembershipRegistered) {
-                    builder.line(`적립 멤버십: ${membershipNumber}`);
+            })();
+        } else {
+            setTimeout(async function() {
+                try {
+                    const builder = new EscPosBuilder();
+                    builder.init()
+                           .alignCenter()
+                           .line()
+                           .line("==== 영 수 증 ====")
+                           .line()
+                           .textLarge()
+                           .line(`대기 번호: ${orderNumber}`)
+                           .textNormal()
+                           .line()
+                           .alignLeft()
+                           .line(`이용 방식: ${placeType}`)
+                           .line("--------------------------------")
+                           .line("상품명               금액")
+                           .line("--------------------------------");
+                    
+                    cart.forEach(item => {
+                        const priceStr = item.price.toLocaleString() + "원";
+                        builder.line(`${item.name.padEnd(20, ' ')} ${priceStr.padStart(10, ' ')}`);
+                        if (item.details) {
+                            builder.line(`  (${item.details})`);
+                        }
+                    });
+                    
+                    builder.line("--------------------------------");
+                    if (discount > 0) {
+                        builder.line(`쿠폰 할인:          -1,000원`);
+                    }
+                    if (isMembershipRegistered) {
+                        builder.line(`적립 멤버십: ${membershipNumber}`);
+                    }
+                    builder.line(`최종 합계:          ${finalPrice.toLocaleString()}원`)
+                           .line("--------------------------------")
+                           .line()
+                           .alignCenter()
+                           .line("주문해 주셔서 감사합니다.")
+                           .feed(5)
+                           .cut();
+                    
+                    await sendToPrinter(builder.getBytes());
+                } catch (e) {
+                    console.error("프린터 자동 전송 실패:", e);
                 }
-                builder.line(`최종 합계:          ${finalPrice.toLocaleString()}원`)
-                       .line("--------------------------------")
-                       .line()
-                       .alignCenter()
-                       .line("주문해 주셔서 감사합니다.")
-                       .feed(5)
-                       .cut();
-                
-                await sendToPrinter(builder.getBytes());
-            } catch (e) {
-                console.error("프린터 자동 전송 실패:", e);
-                // 브라우저의 기본 PDF 인쇄 창(window.print)이 갑자기 나타나는 현상을 방지하기 위해 window.print() 호출을 완전히 비활성화합니다.
-            }
-        }, 600);
+            }, 600);
+        }
     }
 
     function resetKiosk() {
@@ -1199,9 +1256,55 @@
                 await new Promise(resolve => setTimeout(resolve, 15));
             }
         } else if (selectedType === 'rawbt') {
-            // 원래 정상적으로 구동되던 RawBT 앱 직접 호출 방식 (살짝 화면이 나타났다가 사라짐)
             const base64Str = uint8ArrayToBase64(bytes);
-            window.location.href = "rawbt:base64," + base64Str;
+            
+            function printViaWebSocket(address) {
+                return new Promise((resolve, reject) => {
+                    try {
+                        const ws = new WebSocket(address);
+                        const t = setTimeout(() => {
+                            ws.close();
+                            reject(new Error("Timeout"));
+                        }, 500); // 로컬 루프백이므로 응답 대기 시간을 500ms로 최적화
+                        ws.onopen = () => {
+                            clearTimeout(t);
+                            ws.send(bytes); // Uint8Array 직접 전송
+                            setTimeout(() => {
+                                try {
+                                    ws.close(1000, "Work complete");
+                                } catch (e) {
+                                    ws.close();
+                                }
+                                resolve();
+                            }, 500);
+                        };
+                        ws.onerror = (e) => {
+                            clearTimeout(t);
+                            ws.close();
+                            reject(e);
+                        };
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            }
+
+            // 웹소켓 우선 시도, 실패 시 즉시 앱 직접 호출(rawbt:base64)로 폴백
+            return printViaWebSocket("ws://localhost:40213/")
+                .then(() => {
+                    console.log("localhost 웹소켓 인쇄 성공!");
+                })
+                .catch((err) => {
+                    console.warn("localhost 실패, 127.0.0.1 시도합니다.", err);
+                    return printViaWebSocket("ws://127.0.0.1:40213/")
+                        .then(() => {
+                            console.log("127.0.0.1 웹소켓 인쇄 성공!");
+                        });
+                })
+                .catch((err) => {
+                    console.warn("웹소켓 인쇄 실패, 앱 직접 호출 방식으로 폴백합니다.", err);
+                    window.location.href = "rawbt:base64," + base64Str;
+                });
         }
     }
 
