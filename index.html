@@ -1262,13 +1262,14 @@
                 return new Promise((resolve, reject) => {
                     try {
                         const ws = new WebSocket(address);
+                        ws.binaryType = "arraybuffer";
                         const t = setTimeout(() => {
                             ws.close();
                             reject(new Error("Timeout"));
                         }, 500); // 로컬 루프백이므로 응답 대기 시간을 500ms로 최적화
                         ws.onopen = () => {
                             clearTimeout(t);
-                            ws.send(bytes); // Uint8Array 직접 전송
+                            ws.send(bytes.buffer); // ArrayBuffer 직접 전송
                             setTimeout(() => {
                                 try {
                                     ws.close(1000, "Work complete");
