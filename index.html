@@ -582,14 +582,14 @@
                         <div style="display: flex; flex-direction: column; gap: 8px;">
                             <div style="display: flex; gap: 15px;">
                                 <label style="font-weight: normal; font-size: 15px; cursor: pointer;">
-                                    <input type="radio" name="conn-type" value="serial" checked onchange="toggleConnType()"> 유선 (COM)
+                                    <input type="radio" name="conn-type" value="serial" onchange="toggleConnType()"> 유선 (COM)
                                 </label>
                                 <label style="font-weight: normal; font-size: 15px; cursor: pointer;">
                                     <input type="radio" name="conn-type" value="bluetooth" onchange="toggleConnType()"> 무선 (블루투스)
                                 </label>
                             </div>
                             <label style="font-weight: normal; font-size: 15px; cursor: pointer;">
-                                <input type="radio" name="conn-type" value="rawbt" onchange="toggleConnType()"> 안드로이드 앱 (RawBT)
+                                <input type="radio" name="conn-type" value="rawbt" checked onchange="toggleConnType()"> 안드로이드 앱 (RawBT)
                             </label>
                         </div>
                     </div>
@@ -888,8 +888,7 @@
                 await sendToPrinter(builder.getBytes());
             } catch (e) {
                 console.error("프린터 자동 전송 실패:", e);
-                // 연결되지 않았거나 오류 시 브라우저 인쇄 지원
-                window.print();
+                // 브라우저의 기본 PDF 인쇄 창(window.print)이 갑자기 나타나는 현상을 방지하기 위해 window.print() 호출을 완전히 비활성화합니다.
             }
         }, 600);
     }
@@ -915,12 +914,10 @@
 
     // 페이지 로드 시 설정 불러오기
     window.addEventListener('DOMContentLoaded', () => {
-        const savedConnType = localStorage.getItem('printer-conn-type');
-        if (savedConnType) {
-            const radio = document.querySelector(`input[name="conn-type"][value="${savedConnType}"]`);
-            if (radio) {
-                radio.checked = true;
-            }
+        const savedConnType = localStorage.getItem('printer-conn-type') || 'rawbt';
+        const radio = document.querySelector(`input[name="conn-type"][value="${savedConnType}"]`);
+        if (radio) {
+            radio.checked = true;
         }
         
         const savedBaud = localStorage.getItem('printer-baudrate');
@@ -1008,6 +1005,27 @@
         diag127.style.color = "#6c757d";
         diagLocal.innerHTML = "⏳ 연결 테스트 중...";
         diagLocal.style.color = "#6c757d";
+
+        // 프로토콜 감지 안내 문구 동적 생성
+        let protocolWarning = "";
+        if (window.location.protocol === "https:") {
+            protocolWarning = "<div style='color:#d52b1e; margin-top:8px; font-weight:bold;'>⚠️ 현재 HTTPS(보안 연결)로 접속 중입니다. 웹 브라우저는 Mixed Content 보안 규정으로 인해 ws:// 로컬 웹소켓 통신을 기본 차단합니다. Fully Kiosk Browser 설정에서 Mixed Content Mode를 'Always Allow'로 변경하시거나, 키오스크를 일반 HTTP 주소(예: http://...)로 로딩하셔야 자동 인쇄가 가능합니다.</div>";
+        } else if (window.location.protocol === "file:") {
+            protocolWarning = "<div style='color:#e65c00; margin-top:8px; font-weight:bold;'>⚠️ 현재 로컬 파일(file:///)로 실행 중입니다. 브라우저 보안 규정에 의해 로컬 루프백 웹소켓 통신이 제한될 수 있습니다. Fully Kiosk Browser를 쓰는 경우 'Localhost File Access'를 활성화하고 http://localhost/... 경로로 진입해 주세요.</div>";
+        } else {
+            protocolWarning = "<div style='color:green; margin-top:8px; font-weight:bold;'>ℹ️ 일반 HTTP 주소로 연결됨 (보안 제한 없음). Server for RawBT 앱만 실행되어 있으면 백그라운드 인쇄가 가능합니다.</div>";
+        }
+
+        let warningDiv = document.getElementById('ws-protocol-warning');
+        if (!warningDiv) {
+            warningDiv = document.createElement('div');
+            warningDiv.id = 'ws-protocol-warning';
+            warningDiv.style.fontSize = '11px';
+            warningDiv.style.marginTop = '8px';
+            warningDiv.style.lineHeight = '1.5';
+            diag127.parentNode.appendChild(warningDiv);
+        }
+        warningDiv.innerHTML = protocolWarning;
 
         // Test 127.0.0.1
         try {
@@ -1181,54 +1199,9 @@
                 await new Promise(resolve => setTimeout(resolve, 15));
             }
         } else if (selectedType === 'rawbt') {
+            // 원래 정상적으로 구동되던 RawBT 앱 직접 호출 방식 (살짝 화면이 나타났다가 사라짐)
             const base64Str = uint8ArrayToBase64(bytes);
-            
-            function printViaWebSocket(address) {
-                return new Promise((resolve, reject) => {
-                    try {
-                        const ws = new WebSocket(address);
-                        ws.binaryType = "arraybuffer";
-                        const t = setTimeout(() => {
-                            ws.close();
-                            reject(new Error("Timeout"));
-                        }, 1200);
-                        ws.onopen = () => {
-                            clearTimeout(t);
-                            ws.send(bytes.buffer);
-                            setTimeout(() => {
-                                ws.close();
-                                resolve();
-                            }, 200);
-                        };
-                        ws.onerror = (e) => {
-                            clearTimeout(t);
-                            ws.close();
-                            reject(e);
-                        };
-                    } catch (err) {
-                        reject(err);
-                    }
-                });
-            }
-
-            // 1순위: ws://localhost:40213 시도
-            printViaWebSocket("ws://localhost:40213/")
-                .then(() => {
-                    console.log("localhost 웹소켓 인쇄 성공!");
-                })
-                .catch((err) => {
-                    console.warn("localhost 실패, 127.0.0.1 시도합니다.", err);
-                    // 2순위: ws://127.0.0.1:40213 시도
-                    return printViaWebSocket("ws://127.0.0.1:40213/");
-                })
-                .then(() => {
-                    console.log("127.0.0.1 웹소켓 인쇄 성공!");
-                })
-                .catch((err) => {
-                    console.warn("웹소켓 인쇄 실패, Intent 방식으로 폴백합니다.", err);
-                    // 3순위: Intent 폴백
-                    window.location.href = "intent:#Intent;action=ru.a402d.rawbtprinter.action.PRINT_RAWBT;package=ru.a402d.rawbtprinter;S.ru.a402d.rawbtprinter.extra.DATA=" + encodeURIComponent("base64," + base64Str) + ";end;";
-                });
+            window.location.href = "rawbt:base64," + base64Str;
         }
     }
 
